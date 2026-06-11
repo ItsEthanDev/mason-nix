@@ -11,6 +11,8 @@
         modules = [
           ./systems/x86_64-linux/mason
           ./modules/nixos/locale
+          ./modules/nixos/nvidia
+          ./modules/nixos/steam
         ];
       };
     };

@@ -57,6 +57,8 @@
 
   environment.systemPackages = with pkgs; [
     git
+    discord
+    steam
   ];
 
   system.stateVersion = "26.05";
