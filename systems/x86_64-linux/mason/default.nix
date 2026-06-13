@@ -25,14 +25,21 @@
     kernelPackages = pkgs.linuxPackages_latest;
   };
 
+  hardware.sc0710 = {
+    enable = true;
+    enableFirmware = true;
+  };
+
   services = {
-    xserver.enable = true;
+    xserver = {
+      enable = true;
+      xkb = {
+        layout = "us";
+        variant = "";
+      };
+    };
     displayManager.sddm.enable = true;
     desktopManager.plasma6.enable = true;
-    xserver.xkb = {
-      layout = "us";
-      variant = "";
-    };
     printing.enable = true;
     pulseaudio.enable = false;
     pipewire = {
@@ -59,6 +66,13 @@
     git
     discord
     steam
+    mpc-qt
+    code-cursor
+    gsmartcontrol
+    coolercontrol.coolercontrol-gui
+    lm_sensors
+    obs-studio
+    proton-vpn
   ];
 
   system.stateVersion = "26.05";
