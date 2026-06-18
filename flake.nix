@@ -23,7 +23,6 @@
           ./modules/nixos/mpc-qt
           ./modules/nixos/obs
           ./modules/nixos/zen-browser
-          ./modules/nixos/redmond97-se
         ];
       };
     };
