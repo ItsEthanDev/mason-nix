@@ -9,7 +9,10 @@
   ];
 
   nixpkgs = {
-    config.allowUnfree = true;
+    config = {
+    allowUnfree = true;
+    cudaSupport = true;
+  };
     system = "x86_64-linux";
   };
 
@@ -23,7 +26,16 @@
     loader.grub.device = "/dev/nvme0n1";
     loader.grub.useOSProber = true;
     kernelPackages = pkgs.linuxPackages_latest;
+    kernelModules = [
+      "nct6775" # motherboard fans and sensors
+      "nvidia_uvm" # required for NVENC/CUDA user-space access
+    ];
   };
+
+  swapDevices = [{
+    device = "/swapfile";
+    size = 32 * 1024; # 32 GiB
+  }];
 
   hardware.sc0710 = {
     enable = true;
@@ -37,6 +49,7 @@
         layout = "us";
         variant = "";
       };
+      desktopManager.xfce.enable = true;
     };
     displayManager.sddm.enable = true;
     desktopManager.plasma6.enable = true;
@@ -60,18 +73,17 @@
     ];
   };
 
-  programs.firefox.enable = true;
+  programs.firefox.enable = false;
 
   environment.systemPackages = with pkgs; [
     git
     discord
     steam
-    mpc-qt
     code-cursor
     gsmartcontrol
     coolercontrol.coolercontrol-gui
-    lm_sensors
     obs-studio
+    lm_sensors
     proton-vpn
   ];
 

@@ -7,7 +7,7 @@
   cfg = config.programs.mpc-qt;
   preferWayland = lib.boolToString cfg.tweaksPreferWayland;
 
-  patchSettingsScript = ''
+  patchSettings = pkgs.writeShellScript "mpc-qt-patch-settings" ''
     settings="$HOME/.config/mpc-qt/settings.json"
     if [ -f "$settings" ]; then
       tmp="$(mktemp)"
@@ -26,13 +26,11 @@
     postBuild = ''
       mv $out/bin/mpc-qt $out/bin/.mpc-qt-unwrapped
       makeWrapper $out/bin/.mpc-qt-unwrapped $out/bin/mpc-qt \
-        --prefix PATH : ${lib.makeBinPath [pkgs.jq]} \
-        --run '${patchSettingsScript}'
+        --run '${patchSettings}'
     '';
   };
 in {
   options.programs.mpc-qt = {
-    enable = lib.mkEnableOption "mpc-qt media player";
     tweaksPreferWayland = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -43,7 +41,7 @@ in {
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = {
     environment.systemPackages = [mpc-qt];
 
     system.activationScripts.mpc-qt-settings = lib.stringAfter ["users"] (
