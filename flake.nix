@@ -22,7 +22,6 @@
           ./modules/nixos/coolercontrol
           ./modules/nixos/mpc-qt
           ./modules/nixos/obs
-          ./modules/nixos/redmond97-se
           ./modules/nixos/zen-browser
         ];
       };
