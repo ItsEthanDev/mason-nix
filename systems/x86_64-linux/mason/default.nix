@@ -1,4 +1,6 @@
-{pkgs, ...}: {
+{pkgs, ...}: let
+  xfce4-indicator-plugin = pkgs.callPackage ../../../packages/xfce4-indicator-plugin.nix {};
+in {
   imports = [
     ./hardware-configuration.nix
   ];
@@ -85,7 +87,22 @@
     obs-studio
     lm_sensors
     proton-vpn
+    xfce4-panel-profiles
+    xfce4-whiskermenu-plugin
+    xfce4-indicator-plugin
+    networkmanagerapplet
+    xfce4-pulseaudio-plugin       # volume / tray audio button
+    xfce4-weather-plugin          # weather (themed by Redmond97)
+    xfce4-systemload-plugin       # CPU graph
+    xfce4-cpugraph-plugin         # another CPU monitor
+    xfce4-netload-plugin          # network graph
+    xfce4-clipman-plugin          # clipboard manager
+    xfce4-docklike-plugin         # dock-style taskbar
+    xfce4-notes-plugin            # sticky notes
+    xfce4-genmon-plugin           # custom script output on panel
   ];
+
+  services.conky.enable = true;
 
   system.stateVersion = "26.05";
 }
