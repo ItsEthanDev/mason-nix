@@ -25,6 +25,7 @@
           ./modules/nixos/zen-browser
           ./modules/nixos/redmond97-se
           ./modules/nixos/conky
+          ./modules/nixos/snapraid-btrfs
         ];
       };
     };

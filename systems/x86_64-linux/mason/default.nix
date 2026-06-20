@@ -3,6 +3,7 @@
 in {
   imports = [
     ./hardware-configuration.nix
+    ./storage.nix
   ];
 
   nix.settings.experimental-features = [

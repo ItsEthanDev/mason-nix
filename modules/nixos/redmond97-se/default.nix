@@ -24,7 +24,7 @@
     src = src;
 
     dontUnpack = true;
-    nativeBuildInputs = [pkgs.xz];
+    nativeBuildInputs = [pkgs.xz pkgs.gnused];
 
     installPhase = ''
       runHook preInstall
@@ -54,6 +54,11 @@
       ln -s $out/share/redmond97-se/builder/make-install-all-presets.sh $out/bin/redmond97-install-all-presets
 
       find $out/share/icons -type l ! -exec test -e {} \; -delete
+
+      # GTK rejects scale(50%); Zen and newer GTK log parse errors without this.
+      find $out/share/themes -name gtk-xfce4.css -exec sed -i 's/scale(50%)/scale(0.5)/g' {} +
+      # Deprecated on GTK 3.20+; removing silences harmless but noisy warnings.
+      find $out/share/themes -name gtk-general.css -exec sed -i '/scrollbars-within-bevel/d' {} +
 
       runHook postInstall
     '';
