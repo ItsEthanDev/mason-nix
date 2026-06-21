@@ -49,7 +49,7 @@ in {
     xserver = {
       enable = true;
       xkb = {
-        layout = "us";
+        layout = "jp";
         variant = "";
       };
       desktopManager.xfce.enable = true;
@@ -78,6 +78,15 @@ in {
 
   programs.firefox.enable = false;
 
+  # 1Password desktop app + CLI for interactive/personal use. The headless
+  # snapraid notification secrets are handled separately via opnix
+  # (service-account driven); see storage.nix.
+  programs._1password.enable = true;
+  programs._1password-gui = {
+    enable = true;
+    polkitPolicyOwners = ["masons"];
+  };
+
   environment.systemPackages = with pkgs; [
     git
     discord
@@ -86,6 +95,7 @@ in {
     gsmartcontrol
     coolercontrol.coolercontrol-gui
     obs-studio
+    ffmpeg-full
     lm_sensors
     proton-vpn
     xfce4-panel-profiles

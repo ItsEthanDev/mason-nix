@@ -53,9 +53,16 @@
     options = ["nofail"];
   };
 
+  # Every entry must be an existing directory: a non-existent path in
+  # ReadWritePaths makes systemd's mount-namespace setup fail to apply the
+  # writable exceptions under ProtectSystem=strict, which silently leaves the
+  # whole array read-only inside the unit. Use the parity *mount points* (the
+  # snapraid.parity files don't exist before the first sync) and include each
+  # data disk's .snapshots subvolume, where snapraid-btrfs/snapper write.
   readWritePaths = lib.unique (
     dataMountPoints
-    ++ parityFiles
+    ++ dataSnapshotMounts
+    ++ parityMountList
     ++ map lib.dirOf contentFiles
   );
 
@@ -180,89 +187,25 @@
     '';
   };
 
-  # Pre-flight verifier used as ExecStartPre for the sync service (and runnable
-  # by hand). Fails non-zero if any configured disk is missing, unmounted, not
-  # the expected filesystem, or unwritable (parity), so systemd aborts the sync
-  # before SnapRAID can ever touch parity with a degraded array.
+  # Each data disk's .snapshots subvolume mount, where snapraid-btrfs/snapper
+  # write snapshots (referenced by readWritePaths).
   dataSnapshotMounts = map (mp: "${mp}/.snapshots") dataMountPoints;
-
-  preflightScript = pkgs.writeShellApplication {
-    name = "snapraid-btrfs-preflight";
-    runtimeInputs = with pkgs; [util-linux btrfs-progs coreutils];
-    text = ''
-      DATA_NAMES=( ${shArr dataNameList} )
-      DATA_DEVICES=( ${shArr dataDeviceList} )
-      DATA_MOUNTS=( ${shArr dataMountPoints} )
-      DATA_SNAPSHOT_MOUNTS=( ${shArr dataSnapshotMounts} )
-      CONTENT_MOUNTS=( ${shArr contentMountList} )
-      PARITY_NAMES=( ${shArr parityNameList} )
-      PARITY_DEVICES=( ${shArr parityDeviceList} )
-      PARITY_MOUNTS=( ${shArr parityMountList} )
-
-      fail=0
-      err() {
-        echo "snapraid-btrfs-preflight: FAIL: $*" >&2
-        fail=1
-      }
-
-      check_device() {
-        # $1 = label, $2 = stable device path
-        [[ -e "$2" ]] || err "$1: device $2 is not present (disk missing?)"
-      }
-
-      check_mounted() {
-        # $1 = label, $2 = mountpoint; returns non-zero if not mounted
-        if mountpoint -q "$2"; then
-          return 0
-        fi
-        err "$1: $2 is not mounted"
-        return 1
-      }
-
-      for i in "''${!DATA_NAMES[@]}"; do
-        name="''${DATA_NAMES[$i]}"
-        check_device "$name" "''${DATA_DEVICES[$i]}"
-        if check_mounted "$name" "''${DATA_MOUNTS[$i]}"; then
-          if ! btrfs subvolume show "''${DATA_MOUNTS[$i]}" >/dev/null 2>&1; then
-            err "$name: ''${DATA_MOUNTS[$i]} is not a btrfs subvolume"
-          fi
-          ls -A "''${DATA_MOUNTS[$i]}" >/dev/null 2>&1 ||
-            err "$name: cannot read ''${DATA_MOUNTS[$i]}"
-        fi
-        check_mounted "$name (.snapshots)" "''${DATA_SNAPSHOT_MOUNTS[$i]}" || true
-        check_mounted "$name (content)" "''${CONTENT_MOUNTS[$i]}" || true
-      done
-
-      for i in "''${!PARITY_NAMES[@]}"; do
-        name="''${PARITY_NAMES[$i]}"
-        check_device "$name" "''${PARITY_DEVICES[$i]}"
-        if check_mounted "$name" "''${PARITY_MOUNTS[$i]}"; then
-          probe="''${PARITY_MOUNTS[$i]}/.snapraid-btrfs-preflight.$$"
-          if touch "$probe" 2>/dev/null; then
-            rm -f "$probe"
-          else
-            err "$name: ''${PARITY_MOUNTS[$i]} is not writable"
-          fi
-        fi
-      done
-
-      if [[ "$fail" -ne 0 ]]; then
-        echo "snapraid-btrfs-preflight: refusing to continue; array is not healthy." >&2
-        exit 1
-      fi
-      echo "snapraid-btrfs-preflight: OK - all data and parity disks mounted and healthy."
-    '';
-  };
 
   notif = cfg.notifications;
   emailEnabled = notif.email.enable;
-  ntfyEnabled = notif.ntfy.enable;
   hasSecrets = notif.secretsFile != null;
-  runtimeRunnerConf = "/run/snapraid-btrfs/runner.conf";
 
-  # Runner config template rendered at runtime so the SMTP password is pulled
-  # from the secrets EnvironmentFile instead of being baked into the store.
-  runnerConfTemplate = pkgs.writeText "snapraid-btrfs-runner.conf.in" ''
+  # The SMTP password can come from a per-secret file (e.g. deployed by opnix
+  # from 1Password) or, failing that, from the legacy KEY=VALUE EnvironmentFile.
+  # The file source is preferred; the EnvironmentFile is only wired up as a
+  # fallback when passwordFile is not configured.
+  smtpPasswordFile = notif.email.passwordFile;
+  emailUsesEnvFile = emailEnabled && smtpPasswordFile == null && hasSecrets;
+
+  # Static runner config: it holds no secrets, so it can live in the store.
+  # The runner's own (plain-text) email is disabled (sendon empty); status
+  # reports are produced by the HTML notifier below instead.
+  runnerConf = pkgs.writeText "snapraid-btrfs-runner.conf" ''
     [snapraid-btrfs]
     executable = ${pkgs.snapraid-btrfs}/bin/snapraid-btrfs
     snapper-configs =
@@ -285,20 +228,7 @@
     maxsize = 5000
 
     [email]
-    sendon = ${lib.concatStringsSep "," notif.email.sendOn}
-    short = false
-    subject = ${notif.email.subject}
-    from = ${notif.email.from}
-    to = ${notif.email.to}
-    maxsize = 500
-
-    [smtp]
-    host = ${notif.email.host}
-    port = ${toString notif.email.port}
-    ssl = ${lib.boolToString notif.email.ssl}
-    tls = ${lib.boolToString notif.email.tls}
-    user = ${notif.email.user}
-    password = ''${SMTP_PASSWORD}
+    sendon =
 
     [scrub]
     enabled = true
@@ -306,57 +236,58 @@
     older-than = 10
   '';
 
-  renderRunnerConf = pkgs.writeShellApplication {
-    name = "snapraid-btrfs-render-runner-conf";
-    runtimeInputs = with pkgs; [gettext coreutils];
+  # Renders a formatted HTML status report from the run's journal and emails it.
+  # Invoked as a systemd OnSuccess=/OnFailure= handler on the sync unit.
+  emailReport = pkgs.writeShellApplication {
+    name = "snapraid-btrfs-email-report";
+    runtimeInputs = with pkgs; [python3 systemd];
     text = ''
-      out="''${RUNTIME_DIRECTORY%%:*}/runner.conf"
-      umask 077
-      # Restrict substitution to SMTP_PASSWORD; the literal var list is meant
-      # to reach envsubst unexpanded, hence the single quotes.
-      # shellcheck disable=SC2016
-      envsubst '$SMTP_PASSWORD' < ${runnerConfTemplate} > "$out"
+      exec ${pkgs.python3}/bin/python3 \
+        ${../../../packages/snapraid-btrfs-email-report.py} "$@"
     '';
   };
 
-  ntfyScript = pkgs.writeShellApplication {
-    name = "snapraid-btrfs-notify";
-    runtimeInputs = with pkgs; [curl coreutils systemd];
-    text = ''
-      status="''${1:-failure}"
-      server=${lib.escapeShellArg notif.ntfy.server}
-      topic=${lib.escapeShellArg notif.ntfy.topic}
-      host=${lib.escapeShellArg config.networking.hostName}
+  # Non-secret SMTP/identity settings passed to the notifier via the
+  # environment; the password is read at runtime from its file (or the legacy
+  # EnvironmentFile fallback).
+  reportEnv =
+    [
+      "SR_HOST=${config.networking.hostName}"
+      "SR_UNIT=snapraid-btrfs-sync.service"
+      "SR_SMTP_HOST=${notif.email.host}"
+      "SR_SMTP_PORT=${toString notif.email.port}"
+      "SR_SMTP_TLS=${lib.boolToString notif.email.tls}"
+      "SR_SMTP_SSL=${lib.boolToString notif.email.ssl}"
+      "SR_SMTP_USER=${notif.email.user}"
+      "SR_EMAIL_FROM=${notif.email.from}"
+      "SR_EMAIL_TO=${notif.email.to}"
+      "SR_EMAIL_SUBJECT=${notif.email.subject}"
+      # The notifier's smtplib STARTTLS needs the system CA bundle.
+      "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+    ]
+    ++ lib.optional (smtpPasswordFile != null) "SR_PASSWORD_FILE=${smtpPasswordFile}";
 
-      case "$status" in
-        success)
-          prio=${lib.escapeShellArg notif.ntfy.successPriority}
-          title="SnapRAID OK on $host"
-          tags="white_check_mark"
-          body="snapraid-btrfs sync/scrub completed successfully."
-          ;;
-        *)
-          prio=${lib.escapeShellArg notif.ntfy.failurePriority}
-          title="SnapRAID FAILED on $host"
-          tags="rotating_light,warning"
-          body="snapraid-btrfs-sync failed. Recent log:
-
-      $(journalctl -u snapraid-btrfs-sync.service -n 20 --no-pager 2>/dev/null || echo '(journal unavailable)')"
-          ;;
-      esac
-
-      auth=()
-      if [[ -n "''${NTFY_TOKEN:-}" ]]; then
-        auth=(-H "Authorization: Bearer ''${NTFY_TOKEN}")
-      fi
-
-      curl -fsS --max-time 20 "''${auth[@]}" \
-        -H "Title: $title" \
-        -H "Priority: $prio" \
-        -H "Tags: $tags" \
-        -d "$body" \
-        "$server/$topic" >/dev/null
-    '';
+  mkNotify = kind: lib.mkIf emailEnabled {
+    description = "Email a snapraid-btrfs ${kind} report";
+    serviceConfig =
+      {
+        Type = "oneshot";
+        ExecStart = "${emailReport}/bin/snapraid-btrfs-email-report ${kind}";
+        Environment = reportEnv;
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        RestrictAddressFamilies = "AF_UNIX AF_INET AF_INET6";
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        SystemCallArchitectures = "native";
+        SystemCallFilter = "@system-service";
+      }
+      // lib.optionalAttrs emailUsesEnvFile {
+        EnvironmentFile = ["-${notif.secretsFile}"];
+      };
   };
 in {
   options.services.snapraid-btrfs = with lib.types; {
@@ -373,28 +304,16 @@ in {
       '';
     };
 
-    verifyMountsBeforeSync = lib.mkOption {
-      type = bool;
-      default = true;
-      description = ''
-        Run a pre-flight check (as ExecStartPre) before the scheduled sync that
-        verifies every configured data and parity disk is present, mounted, the
-        expected filesystem, and (for parity) writable. If any check fails the
-        sync unit aborts before SnapRAID runs, preventing a degraded array from
-        being synced into parity.
-      '';
-    };
-
     notifications = {
       secretsFile = lib.mkOption {
         type = nullOr path;
         default = "/etc/snapraid-btrfs/secrets.env";
         description = ''
-          Root-only EnvironmentFile with secrets as KEY=VALUE lines:
-          `SMTP_PASSWORD` (for email) and/or `NTFY_TOKEN` (for authenticated
-          ntfy). Kept out of the world-readable Nix store and referenced
+          Legacy fallback: root-only EnvironmentFile with the SMTP password as
+          a `SMTP_PASSWORD=...` line. Only consulted when `email.passwordFile`
+          is not set. Kept out of the world-readable Nix store and referenced
           optionally, so a missing file degrades gracefully (the run still
-          completes; only the notification fails).
+          completes; only the email send fails). Set to null to disable.
         '';
       };
 
@@ -428,7 +347,18 @@ in {
         user = lib.mkOption {
           type = str;
           default = "";
-          description = "SMTP username (password comes from secretsFile as SMTP_PASSWORD).";
+          description = "SMTP username (password comes from passwordFile, or secretsFile as SMTP_PASSWORD).";
+        };
+        passwordFile = lib.mkOption {
+          type = nullOr path;
+          default = null;
+          description = ''
+            Path to a file containing ONLY the SMTP password (no KEY=VALUE).
+            Intended for runtime-deployed secrets such as those provided by
+            opnix from 1Password. When set, it takes precedence over
+            `SMTP_PASSWORD` from `secretsFile`. A missing/unreadable file
+            degrades gracefully (sync still runs; only the email send fails).
+          '';
         };
         ssl = lib.mkOption {
           type = bool;
@@ -444,35 +374,6 @@ in {
           type = str;
           default = "[SnapRAID] Status Report:";
           description = "Email subject prefix (SUCCESS/ERROR is appended).";
-        };
-      };
-
-      ntfy = {
-        enable = lib.mkEnableOption "ntfy push notifications (every run, with prioritised failures)";
-        server = lib.mkOption {
-          type = str;
-          default = "https://ntfy.sh";
-          description = "ntfy base URL (use your self-hosted server if applicable).";
-        };
-        topic = lib.mkOption {
-          type = str;
-          default = "";
-          description = "ntfy topic to publish to.";
-        };
-        notifyOnSuccess = lib.mkOption {
-          type = bool;
-          default = true;
-          description = "Also send a notification after successful runs (not just failures).";
-        };
-        successPriority = lib.mkOption {
-          type = str;
-          default = "low";
-          description = "ntfy priority for successful runs.";
-        };
-        failurePriority = lib.mkOption {
-          type = str;
-          default = "urgent";
-          description = "ntfy priority for failed runs / detected errors.";
         };
       };
     };
@@ -555,10 +456,6 @@ in {
         assertion = !emailEnabled || (notif.email.host != "" && notif.email.to != "" && notif.email.from != "");
         message = "services.snapraid-btrfs.notifications.email requires host, to, and from to be set.";
       }
-      {
-        assertion = !ntfyEnabled || notif.ntfy.topic != "";
-        message = "services.snapraid-btrfs.notifications.ntfy requires a topic to be set.";
-      }
     ];
 
     nixpkgs.overlays = [
@@ -615,93 +512,68 @@ in {
 
     services.snapper.configs = snapperConfigs;
 
+    # We schedule via snapraid-btrfs-sync; suppress the stock module's timers
+    # (otherwise they're generated with an empty OnCalendar and land in
+    # "bad-setting" state).
+    systemd.timers.snapraid-sync.enable = false;
+    systemd.timers.snapraid-scrub.enable = false;
+
     systemd.services.snapraid-btrfs-sync = {
       description = "Synchronize SnapRAID array using BTRFS snapshots";
       startAt = cfg.syncAt;
-      # The runner's SMTP client (Python) needs the system CA bundle to verify
-      # STARTTLS under the strict sandbox.
-      environment = lib.mkIf emailEnabled {
-        SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
-      };
-      unitConfig = lib.mkIf ntfyEnabled (
-        {OnFailure = "snapraid-btrfs-notify-failure.service";}
-        // lib.optionalAttrs notif.ntfy.notifyOnSuccess {
+      # Send a formatted HTML report afterwards (the notifier reads this run's
+      # journal). Wired per outcome so it honours notifications.email.sendOn.
+      unitConfig = lib.mkIf emailEnabled (
+        lib.optionalAttrs (builtins.elem "success" notif.email.sendOn) {
           OnSuccess = "snapraid-btrfs-notify-success.service";
         }
+        // lib.optionalAttrs (builtins.elem "error" notif.email.sendOn) {
+          OnFailure = "snapraid-btrfs-notify-failure.service";
+        }
       );
-      serviceConfig =
-        {
-          Type = "oneshot";
-          User = "root";
-          Group = "root";
-          ExecStartPre =
-            lib.optional emailEnabled "${renderRunnerConf}/bin/snapraid-btrfs-render-runner-conf"
-            ++ lib.optional cfg.verifyMountsBeforeSync "${preflightScript}/bin/snapraid-btrfs-preflight";
-          ExecStart =
-            if emailEnabled
-            then "${pkgs.snapraid-btrfs-runner}/bin/snapraid-btrfs-runner -c ${runtimeRunnerConf}"
-            else "${pkgs.snapraid-btrfs-runner}/bin/snapraid-btrfs-runner";
-          RuntimeDirectory = "snapraid-btrfs";
-          RuntimeDirectoryMode = "0700";
-          Nice = 19;
-          IOSchedulingPriority = 7;
-          CPUSchedulingPolicy = "batch";
+      serviceConfig = {
+        Type = "oneshot";
+        User = "root";
+        Group = "root";
+        ExecStart = "${pkgs.snapraid-btrfs-runner}/bin/snapraid-btrfs-runner -c ${runnerConf}";
+        Nice = 19;
+        IOSchedulingPriority = 7;
+        CPUSchedulingPolicy = "batch";
 
-          LockPersonality = true;
-          MemoryDenyWriteExecute = true;
-          NoNewPrivileges = true;
-          PrivateTmp = true;
-          ProtectClock = true;
-          ProtectControlGroups = true;
-          ProtectHostname = true;
-          ProtectKernelLogs = true;
-          ProtectKernelModules = true;
-          ProtectKernelTunables = true;
-          # AF_INET(6) is required for the runner's SMTP email; otherwise UNIX only.
-          RestrictAddressFamilies =
-            if emailEnabled
-            then "AF_UNIX AF_INET AF_INET6"
-            else "AF_UNIX";
-          RestrictNamespaces = true;
-          RestrictRealtime = true;
-          RestrictSUIDSGID = true;
-          SystemCallArchitectures = "native";
-          SystemCallFilter = "@system-service";
-          SystemCallErrorNumber = "EPERM";
-          CapabilityBoundingSet = "";
-          ProtectSystem = "strict";
-          ProtectHome = "read-only";
-          ReadOnlyPaths = ["/etc/snapraid.conf" "/etc/snapper"];
-          ReadWritePaths = readWritePaths;
-        }
-        // lib.optionalAttrs (emailEnabled && hasSecrets) {
-          EnvironmentFile = ["-${notif.secretsFile}"];
-        };
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectHostname = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
+        ProtectKernelTunables = true;
+        # The sync itself does no network I/O (email is handled by the
+        # separate notifier unit), so UNIX sockets are all it needs.
+        RestrictAddressFamilies = "AF_UNIX";
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        SystemCallArchitectures = "native";
+        SystemCallFilter = "@system-service";
+        SystemCallErrorNumber = "EPERM";
+        # snapraid-btrfs/snapper create and delete btrfs snapshots, which
+        # require CAP_SYS_ADMIN; computing parity over data owned by any user
+        # requires CAP_DAC_READ_SEARCH. An empty set makes the sync fail.
+        # This is the minimal set this workload needs.
+        CapabilityBoundingSet = ["CAP_SYS_ADMIN" "CAP_DAC_READ_SEARCH"];
+        AmbientCapabilities = ["CAP_SYS_ADMIN" "CAP_DAC_READ_SEARCH"];
+        ProtectSystem = "strict";
+        ProtectHome = "read-only";
+        ReadOnlyPaths = ["/etc/snapraid.conf" "/etc/snapper"];
+        ReadWritePaths = readWritePaths;
+      };
     };
 
-    systemd.services.snapraid-btrfs-notify-failure = lib.mkIf ntfyEnabled {
-      description = "Send ntfy notification for a failed snapraid-btrfs-sync run";
-      serviceConfig =
-        {
-          Type = "oneshot";
-          ExecStart = "${ntfyScript}/bin/snapraid-btrfs-notify failure";
-        }
-        // lib.optionalAttrs hasSecrets {
-          EnvironmentFile = ["-${notif.secretsFile}"];
-        };
-    };
-
-    systemd.services.snapraid-btrfs-notify-success = lib.mkIf (ntfyEnabled && notif.ntfy.notifyOnSuccess) {
-      description = "Send ntfy notification for a successful snapraid-btrfs-sync run";
-      serviceConfig =
-        {
-          Type = "oneshot";
-          ExecStart = "${ntfyScript}/bin/snapraid-btrfs-notify success";
-        }
-        // lib.optionalAttrs hasSecrets {
-          EnvironmentFile = ["-${notif.secretsFile}"];
-        };
-    };
+    systemd.services.snapraid-btrfs-notify-success = mkNotify "success";
+    systemd.services.snapraid-btrfs-notify-failure = mkNotify "failure";
 
     environment.systemPackages = with pkgs; [
       mergerfs
@@ -709,8 +581,6 @@ in {
       snapraid-btrfs-runner
       btrfs-progs
       initDisksScript
-      preflightScript
-    ]
-    ++ lib.optional ntfyEnabled ntfyScript;
+    ];
   };
 }

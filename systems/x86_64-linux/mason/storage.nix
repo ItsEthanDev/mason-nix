@@ -4,8 +4,32 @@
 # all derived from it. To add/remove a disk, edit this list and rebuild, then
 # run `sudo snapraid-btrfs-init-disks` (idempotent; only formats blank drives).
 {
+  config,
+  pkgs,
   ...
 }: {
+  # 1Password-backed secrets via opnix. The only local secret is the service
+  # account token at /etc/opnix-token (set once with `sudo opnix token set`);
+  # everything else is pulled from 1Password at boot into root-only files under
+  # /var/lib/opnix/secrets. Create matching 1Password items (adjust the
+  # references below to your vault/item/field names) before relying on email.
+  # Missing token -> email degrades gracefully.
+  services.onepassword-secrets = {
+    enable = true;
+    tokenFile = "/etc/opnix-token";
+    # Order the sync unit after secrets are deployed.
+    systemdIntegration.services = ["snapraid-btrfs-sync"];
+    secrets = {
+      snapraidSmtpPassword = {
+        reference = "op://Homelab/snapraid-smtp/password";
+        mode = "0400";
+      };
+    };
+  };
+
+  # Make the `opnix` CLI available for `opnix token set`.
+  environment.systemPackages = [pkgs.opnix];
+
   services.snapraid-btrfs = {
     enable = true;
 
@@ -37,36 +61,25 @@
       }
     ];
 
-    # Notifications. Secrets (SMTP_PASSWORD / NTFY_TOKEN) live in the root-only
-    # EnvironmentFile below, NOT in the Nix store. Create it before relying on
-    # email/authenticated ntfy:
-    #   sudo install -d -m 0700 /etc/snapraid-btrfs
-    #   sudo install -m 0600 /dev/null /etc/snapraid-btrfs/secrets.env
-    #   # then add:  SMTP_PASSWORD=...   and (optional) NTFY_TOKEN=...
+    # Notifications. The SMTP password is pulled from 1Password by opnix into a
+    # root-only file (see services.onepassword-secrets above) and referenced
+    # here by path, so nothing sensitive lands in the Nix store. The legacy
+    # EnvironmentFile is disabled.
     notifications = {
-      secretsFile = "/etc/snapraid-btrfs/secrets.env";
+      secretsFile = null;
 
       # Built-in email status report on every run (success + error).
       email = {
         enable = true;
-        to = "you@example.com"; # TODO: set
-        from = "mason@example.com"; # TODO: set
-        host = "smtp.example.com"; # TODO: set
+        to = "shafmasb@gmail.com"; # TODO: set
+        from = "mason@snapraidnotification.com"; # TODO: set
+        host = "smtp.gmail.com"; # TODO: set
         port = 587;
-        user = "mason@example.com"; # TODO: set (password -> secrets.env)
+        user = "shafmasb@gmail.com"; # TODO: set (password -> 1Password)
         tls = true;
         ssl = false;
         sendOn = ["success" "error"];
-      };
-
-      # Push notification every run; failures get an urgent priority.
-      ntfy = {
-        enable = true;
-        server = "https://ntfy.sh"; # or your self-hosted server
-        topic = "mason-snapraid-CHANGE-ME"; # TODO: pick a private, hard-to-guess topic
-        notifyOnSuccess = true;
-        successPriority = "low";
-        failurePriority = "urgent";
+        passwordFile = config.services.onepassword-secrets.secretPaths.snapraidSmtpPassword;
       };
     };
   };
