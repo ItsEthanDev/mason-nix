@@ -31,6 +31,9 @@
           ./modules/nixos/finamp
           ./modules/nixos/anki
           ./modules/nixos/kitty
+          ./modules/nixos/cool-retro-term
+          ./modules/nixos/fastfetch
+          ./modules/nixos/chafa
           ./modules/nixos/obs
           ./modules/nixos/zen-browser
           ./modules/nixos/redmond97-se

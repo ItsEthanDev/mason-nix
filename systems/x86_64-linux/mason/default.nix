@@ -119,6 +119,9 @@ in {
   programs.finamp.enable = true;
   programs.anki.enable = true;
   programs.kitty.enable = true;
+  programs.cool-retro-term.enable = true;
+  programs.fastfetch.enable = true;
+  programs.chafa.enable = true;
 
   system.stateVersion = "26.05";
 }

@@ -65,11 +65,7 @@
   '';
 
   genCpuLines = pkgs.writeShellScript "conky-gen-cpu-lines" (builtins.readFile ./gen-cpu-lines.sh);
-  readGtkColors = pkgs.writeShellScript "conky-read-gtk-colors" ''
-    set -eu
-    ${builtins.readFile ../gtk-theme-colors-lib.sh}
-    ${builtins.readFile ./read-gtk-colors.sh}
-  '';
+  readGtkColors = pkgs.writeShellScript "conky-read-gtk-colors" (builtins.readFile ./read-gtk-colors.sh);
 
   conkyStart = pkgs.writeShellScriptBin "conky-start" ''
     set -eu
