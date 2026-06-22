@@ -49,7 +49,7 @@ in {
     xserver = {
       enable = true;
       xkb = {
-        layout = "jp";
+        layout = "us";
         variant = "";
       };
       desktopManager.xfce.enable = true;
@@ -114,6 +114,11 @@ in {
   ];
 
   services.conky.enable = true;
+
+  programs.mpv.enable = true;
+  programs.finamp.enable = true;
+  programs.anki.enable = true;
+  programs.kitty.enable = true;
 
   system.stateVersion = "26.05";
 }

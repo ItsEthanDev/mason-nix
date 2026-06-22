@@ -65,7 +65,11 @@
   '';
 
   genCpuLines = pkgs.writeShellScript "conky-gen-cpu-lines" (builtins.readFile ./gen-cpu-lines.sh);
-  readGtkColors = pkgs.writeShellScript "conky-read-gtk-colors" (builtins.readFile ./read-gtk-colors.sh);
+  readGtkColors = pkgs.writeShellScript "conky-read-gtk-colors" ''
+    set -eu
+    ${builtins.readFile ../gtk-theme-colors-lib.sh}
+    ${builtins.readFile ./read-gtk-colors.sh}
+  '';
 
   conkyStart = pkgs.writeShellScriptBin "conky-start" ''
     set -eu
@@ -210,8 +214,11 @@ in {
     ];
 
     fonts.packages = with pkgs; [
-      cascadia-code
-      conkyFonts
+      # Sarasa Mono J covers Latin + CJK in one duospaced family (CJK glyphs
+      # are exactly 2x Latin width), so conky panels render Japanese journal
+      # output and the localized `cal` grid without tofu or misalignment.
+      sarasa-gothic
+      conkyFonts # Exo 2 (panel headers)
     ];
 
     environment.etc."xdg/autostart/conky.desktop".text = ''

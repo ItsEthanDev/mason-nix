@@ -23,12 +23,14 @@
           ./systems/x86_64-linux/mason
           ./modules/nixos/locale
           ./modules/nixos/input-method
-          ./modules/nixos/locale-toggle
           ./modules/nixos/nvidia
           ./modules/nixos/steam
           ./modules/nixos/waydroid
           ./modules/nixos/coolercontrol
-          ./modules/nixos/mpc-qt
+          ./modules/nixos/mpv
+          ./modules/nixos/finamp
+          ./modules/nixos/anki
+          ./modules/nixos/kitty
           ./modules/nixos/obs
           ./modules/nixos/zen-browser
           ./modules/nixos/redmond97-se
