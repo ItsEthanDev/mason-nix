@@ -31,6 +31,7 @@
           ./modules/nixos/finamp
           ./modules/nixos/anki
           ./modules/nixos/kitty
+          ./modules/nixos/ghostty
           ./modules/nixos/neovim
           ./modules/nixos/cool-retro-term
           ./modules/nixos/fastfetch

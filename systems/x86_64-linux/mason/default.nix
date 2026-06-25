@@ -111,6 +111,9 @@ in {
     xfce4-docklike-plugin         # dock-style taskbar
     xfce4-notes-plugin            # sticky notes
     xfce4-genmon-plugin           # custom script output on panel
+    easyeffects
+    qpwgraph
+    rawtherapee
   ];
 
   services.conky.enable = true;
@@ -119,6 +122,7 @@ in {
   programs.finamp.enable = true;
   programs.anki.enable = true;
   programs.kitty.enable = true;
+  programs.ghostty.enable = true;
   programs.neovim.enable = true;
   programs.cool-retro-term.enable = true;
   programs.fastfetch.enable = true;
