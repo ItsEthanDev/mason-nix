@@ -32,6 +32,7 @@
           ./modules/nixos/anki
           ./modules/nixos/kitty
           ./modules/nixos/ghostty
+          ./modules/nixos/crt-wrapper
           ./modules/nixos/neovim
           ./modules/nixos/cool-retro-term
           ./modules/nixos/fastfetch
@@ -39,6 +40,7 @@
           ./modules/nixos/obs
           ./modules/nixos/zen-browser
           ./modules/nixos/redmond97-se
+          ./modules/nixos/chicago95-icons
           ./modules/nixos/conky
           ./modules/nixos/snapraid-btrfs
           ./modules/nixos/jellyfin

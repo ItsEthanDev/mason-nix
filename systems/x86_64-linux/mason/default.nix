@@ -70,7 +70,7 @@ in {
   users.users."masons" = {
     isNormalUser = true;
     description = "Mason Shaffer";
-    extraGroups = ["networkmanager" "wheel"];
+    extraGroups = ["networkmanager" "wheel" "dialout"];
     packages = with pkgs; [
       kdePackages.kate
     ];
@@ -114,6 +114,8 @@ in {
     easyeffects
     qpwgraph
     rawtherapee
+    opencode
+    arduino-ide
   ];
 
   services.conky.enable = true;
@@ -123,6 +125,7 @@ in {
   programs.anki.enable = true;
   programs.kitty.enable = true;
   programs.ghostty.enable = true;
+  programs.crt-wrapper.enable = true;
   programs.neovim.enable = true;
   programs.cool-retro-term.enable = true;
   programs.fastfetch.enable = true;
