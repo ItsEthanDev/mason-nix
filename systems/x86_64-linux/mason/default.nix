@@ -1,5 +1,13 @@
 {pkgs, ...}: let
   xfce4-indicator-plugin = pkgs.callPackage ../../../packages/xfce4-indicator-plugin.nix {};
+
+  # Nix-packaged interpreters do not consume NIX_LD_LIBRARY_PATH when loading
+  # native modules, so expose the C++ runtime directly to Bun and its children.
+  # https://github.com/nix-community/nix-ld#my-pythonnodejsrubyinterpreter-libraries-do-not-find-the-libraries-configured-by-nix-ld
+  bunWithNativeLibraries = pkgs.writeShellScriptBin "bun" ''
+    export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.stdenv.cc.cc]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    exec ${pkgs.bun}/bin/bun "$@"
+  '';
 in {
   imports = [
     ./hardware-configuration.nix
@@ -116,6 +124,7 @@ in {
     rawtherapee
     opencode
     arduino-ide
+    bun
   ];
 
   services.conky.enable = true;

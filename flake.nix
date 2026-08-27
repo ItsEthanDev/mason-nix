@@ -24,6 +24,7 @@
           ./modules/nixos/locale
           ./modules/nixos/input-method
           ./modules/nixos/nvidia
+          ./modules/nixos/nix-ld
           ./modules/nixos/steam
           ./modules/nixos/waydroid
           ./modules/nixos/coolercontrol
