@@ -29,7 +29,10 @@ in {
 
   networking = {
     hostName = "mason";
-    networkmanager.enable = true;
+    networkmanager = {
+      enable = true;
+      wifi.powersave = false;
+    };
   };
 
   boot = {
@@ -125,6 +128,7 @@ in {
     opencode
     arduino-ide
     bun
+    nodejs
   ];
 
   services.conky.enable = true;
