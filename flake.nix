@@ -3,6 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     sc0710.url = "github:Nakildias/sc0710";
     zen-browser.url = "github:youwen5/zen-browser-flake";
     zen-browser.inputs.nixpkgs.follows = "nixpkgs";
@@ -11,7 +15,7 @@
     opnix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = {nixpkgs, sc0710, zen-browser, opnix, ...}: {
+  outputs = {nixpkgs, home-manager, sc0710, zen-browser, opnix, ...}: {
     nixosConfigurations = {
       mason = nixpkgs.lib.nixosSystem {
         specialArgs = {inherit zen-browser;};
@@ -20,12 +24,19 @@
           opnix.nixosModules.default
           # Expose the opnix CLI (`opnix token set`) as pkgs.opnix.
           {nixpkgs.overlays = [opnix.overlays.default];}
+          home-manager.nixosModules.home-manager
+          {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+            home-manager.users.masons = import ./home/masons;
+          }
           ./systems/x86_64-linux/mason
           ./modules/nixos/locale
           ./modules/nixos/input-method
           ./modules/nixos/nvidia
           ./modules/nixos/nix-ld
           ./modules/nixos/steam
+          ./modules/nixos/retroarch
           ./modules/nixos/waydroid
           ./modules/nixos/coolercontrol
           ./modules/nixos/mpv
@@ -39,6 +50,7 @@
           ./modules/nixos/fastfetch
           ./modules/nixos/chafa
           ./modules/nixos/obs
+          ./modules/nixos/canon-webcam
           ./modules/nixos/zen-browser
           ./modules/nixos/redmond97-se
           ./modules/nixos/chicago95-icons

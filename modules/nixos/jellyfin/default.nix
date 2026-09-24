@@ -12,7 +12,23 @@ in {
       device = "/dev/dri/renderD128";
     };
 
-    transcoding.enableHardwareEncoding = true;
+    # forceEncodingConfig replaces encoding.xml on every start. The defaults
+    # leave HardwareDecodingCodecs empty and hevc10bit off, so 4K HDR remuxes
+    # software-decode HEVC (native) at a few fps and the web HLS player dies
+    # with "a fatal error was encountered in the HLS stream".
+    transcoding = {
+      enableHardwareEncoding = true;
+      enableToneMapping = true;
+      hardwareDecodingCodecs = {
+        h264 = true;
+        hevc = true;
+        hevc10bit = true; # HDR10 / DV P8 Main10 on Turing (RTX 2070)
+        mpeg2 = true;
+        vc1 = true;
+        vp8 = true;
+        vp9 = true;
+      };
+    };
     forceEncodingConfig = true;
   };
 

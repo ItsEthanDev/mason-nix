@@ -422,6 +422,8 @@ in {
         "allow_other"
         "use_ino"
         "cache.files=partial"
+        "passthrough.io=ro"
+        "readahead=1024"
         "category.create=mfs"
         "moveonenospc=true"
         "dropcacheonclose=true"

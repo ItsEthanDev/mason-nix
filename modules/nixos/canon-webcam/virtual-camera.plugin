@@ -1,0 +1,9 @@
+[Plugin]
+Loader=python3
+Module=virtual_camera
+IAge=1
+Name=Virtual Camera
+Description=Publish the live preview to a V4L2 loopback device
+Authors=Mason Shaffer
+Copyright=© 2026 Mason Shaffer
+Website=https://entangle-photo.org/

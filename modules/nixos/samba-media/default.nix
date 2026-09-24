@@ -32,6 +32,11 @@ in {
           "netbios name" = "mason";
           "hosts allow" = "${cfg.allowedClients} 127.0.0.1 localhost";
           "hosts deny" = "0.0.0.0/0";
+          # mergerfs is FUSE; sendfile stalls mid-stream and sounds like
+          # a skipping/scratched record even on an otherwise healthy LAN.
+          "use sendfile" = "no";
+          "aio read size" = "1";
+          "strict locking" = "no";
         };
         media = {
           path = mediaPath;

@@ -20,10 +20,42 @@ in {
   ];
 
   nixpkgs = {
+    overlays = [
+      (_final: prev: {
+        whisper-cpp = prev.whisper-cpp.override {
+          cudaSupport = false;
+        };
+
+        opencode = prev.opencode.overrideAttrs (finalAttrs: oldAttrs: {
+          version = "1.18.32";
+          src = prev.fetchFromGitHub {
+            owner = "anomalyco";
+            repo = "opencode";
+            tag = "v${finalAttrs.version}";
+            hash = "sha256-h5AmK9R0Clk+LT0Tmmfg7iXa6dXNlPi2I5xCjTDRdcg=";
+          };
+          passthru =
+            oldAttrs.passthru
+            // {
+              node_modules = oldAttrs.passthru.node_modules.overrideAttrs (_: {
+                inherit (finalAttrs) version src;
+                outputHash = "sha256-yHhVrJJnzp2gzlLoe0W78VCdvjpQ3zW+PmnFE6TwCFc=";
+              });
+            };
+        });
+      })
+    ];
+
     config = {
-    allowUnfree = true;
-    cudaSupport = true;
-  };
+      allowUnfree = true;
+      # Leave cudaSupport off. The unversioned cudaPackages on this
+      # nixos-unstable is 12.9; NVCC's documented host compiler max is
+      # GCC 14, while stdenv is GCC 15.3. Even backendStdenv (GCC 14.4)
+      # still dies in cuda_device_runtime_api.h. That rebuilds opencv,
+      # frei0r, ffmpeg-full, and jellyfin-ffmpeg from source.
+      # NVENC/NVDEC use the NVIDIA driver + nv-codec-headers, which
+      # ffmpeg-full and Jellyfin already get from allowUnfree.
+    };
     system = "x86_64-linux";
   };
 
@@ -39,10 +71,14 @@ in {
     loader.grub.enable = true;
     loader.grub.device = "/dev/nvme0n1";
     loader.grub.useOSProber = true;
-    kernelPackages = pkgs.linuxPackages_latest;
+    loader.grub.memtest86.enable = true;
+    # 7.2.3 + NVIDIA open modules corrupted PTEs (app crashes, freezes).
+    # Last known-good boot was 7.0.11; 7.0 is EOL in this nixpkgs.
+    kernelPackages = pkgs.linuxPackages_7_1;
     kernelModules = [
       "nct6775" # motherboard fans and sensors
       "nvidia_uvm" # required for NVENC/CUDA user-space access
+      "sg" # SCSI generic access required by MakeMKV
     ];
   };
 
@@ -53,7 +89,6 @@ in {
 
   hardware.sc0710 = {
     enable = true;
-    enableFirmware = true;
   };
 
   services = {
@@ -78,16 +113,22 @@ in {
     };
   };
 
+  # PipeWire logs RTKit ServiceUnknown; without it, audio can underrun
+  # and sound like a scratched record even when the network is fine.
+  security.rtkit.enable = true;
+
   users.users."masons" = {
     isNormalUser = true;
     description = "Mason Shaffer";
-    extraGroups = ["networkmanager" "wheel" "dialout"];
+    extraGroups = ["networkmanager" "wheel" "dialout" "cdrom"];
     packages = with pkgs; [
       kdePackages.kate
     ];
   };
 
   programs.firefox.enable = false;
+  programs.retroarch.enable = true;
+  programs.dconf.enable = true;
 
   # 1Password desktop app + CLI for interactive/personal use. The headless
   # snapraid notification secrets are handled separately via opnix
@@ -105,7 +146,6 @@ in {
     code-cursor
     gsmartcontrol
     coolercontrol.coolercontrol-gui
-    obs-studio
     ffmpeg-full
     lm_sensors
     proton-vpn
@@ -127,8 +167,21 @@ in {
     rawtherapee
     opencode
     arduino-ide
+    makemkv
+    vlc
+    handbrake
     bun
     nodejs
+    gcc
+    vial
+    herdr
+    hunk
+    teams-for-linux
+    (blender.override {
+      cudaSupport = true;
+      cudaArches = ["sm_75"]; # Turing (RTX 2070)
+      openUsdSupport = false;
+    })
   ];
 
   services.conky.enable = true;
